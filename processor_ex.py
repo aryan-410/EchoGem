@@ -26,8 +26,7 @@ class Processor:
                weights : np.ndarray = np.full(7, 1 / np.sqrt(7))):
 
     # verify validity of api
-    self.api_key = "AIzaSyAGtoBurlABN6kW98_e0gzsJ_JY3WvtrGo"
-    # self.api_key = os.getenv("GOOGLE_API_KEY")
+    self.api_key = os.getenv("GOOGLE_API_KEY")
 
     if not self.api_key:
         print("Error: GOOGLE_API_KEY environment variable not found")
@@ -56,7 +55,7 @@ class Processor:
     self.chunker = Chunker()
 
     # create vector database and usage cache
-    self.vector_db = ChunkVectorDB(self.embedding_model, index_name="gangindex") #type: ignore
+    self.vector_db = ChunkVectorDB(self.embedding_model, index_name="my-working-index") #type: ignore
     self.usage_cache = UsageCache("usage_cache_store.csv")
 
   def chunkAndProcess(self, file_path : str = "transcript.txt"):

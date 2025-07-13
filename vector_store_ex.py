@@ -52,7 +52,10 @@ class ChunkVectorDB:
                 "id": str(uuid.uuid4()),
                 "values": vec,
                 "metadata": {
-                    "chunk_text": chunk.content
+                    "title": chunk.title,
+                    "keywords": ", ".join(chunk.keywords),
+                    "named_entities": ", ".join(chunk.named_entities),
+                    "timestamp_range": chunk.timestamp_range,
                 }
             }
         )
