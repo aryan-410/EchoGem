@@ -396,10 +396,6 @@ When you introduce a new module, also **log** what it does: the graph and the CS
 
 ---
 
-Here you go—drop this right under the existing “How the pipeline works” in your README.
-
----
-
 # How it works (deep dive)
 
 This section walks through the concrete data flow, algorithms, IDs, logging, and what the graph is doing under the hood. If you only read one section, make it this one.
