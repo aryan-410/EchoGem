@@ -226,9 +226,9 @@ def main():
     print("\n🎉 Demo Complete!")
     print("=" * 20)
     print("💡 Next steps:")
-    print("   1. Try your own transcripts: echogem process your_file.txt")
-    print("   2. Ask custom questions: echogem query 'Your question here'")
-    print("   3. Explore the graph: echogem graph")
+    print("   1. Try your own transcripts: py -m echogem.cli process your_file.txt")
+    print("   2. Ask custom questions: py -m echogem.cli ask 'Your question here'")
+    print("   3. Explore the graph: py -m echogem.cli graph")
     print("   4. Check usage patterns: python -c \"from usage_cache import UsageCache; print(UsageCache().get_usage_statistics())\"")
     
     print("\n📚 Explore other demos:")

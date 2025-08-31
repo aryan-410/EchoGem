@@ -26,7 +26,7 @@ def main():
     if not os.path.exists(usage_cache_path):
         print(f"❌ Usage cache not found: {usage_cache_path}")
         print("Please process a transcript first using:")
-        print("  echogem process your_transcript.txt")
+        print("  py -m echogem.cli process your_transcript.txt")
         return
     
     print(f"✅ Found usage cache: {usage_cache_path}")

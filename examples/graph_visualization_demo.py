@@ -185,8 +185,8 @@ def main():
     if not visualizer:
         print("\n💡 To get started:")
         print("   1. Install EchoGem: pip install -e .")
-        print("   2. Process a transcript: echogem process transcript.txt")
-        print("   3. Ask some questions: echogem query 'What is this about?'")
+        print("   2. Process a transcript: py -m echogem.cli process transcript.txt")
+        print("   3. Ask some questions: py -m echogem.cli ask 'What is this about?'")
         print("   4. Run this demo again!")
         return
     

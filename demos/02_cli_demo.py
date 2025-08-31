@@ -157,7 +157,7 @@ def demo_cli_features():
     print("\n3️⃣ Processing transcripts with CLI...")
     for filepath in sample_files:
         success = run_cli_command(
-            f"echogem process {filepath} --chunk-size 300 --overlap 50",
+            f"py -m echogem.cli process {filepath} --chunk-size 300 --overlap 50",
             f"Processing {filepath.name}"
         )
         if not success:
@@ -233,7 +233,7 @@ def demo_advanced_cli():
     # Custom chunking options
     print("\n⚙️  Custom chunking options...")
     run_cli_command(
-        "echogem process tech_interview.txt --chunk-size 200 --overlap 25 --semantic-chunking",
+        "py -m echogem.cli process tech_interview.txt --chunk-size 200 --overlap 25 --semantic-chunking",
         "Processing with custom chunking parameters"
     )
     
@@ -287,7 +287,7 @@ def main():
     print("\n🎉 CLI Demo Complete!")
     print("=" * 25)
     print("💡 Key CLI commands to remember:")
-    print("   📝 Process: echogem process <file> [options]")
+    print("   📝 Process: py -m echogem.cli process <file> [options]")
     print("   ❓ Query: echogem query <question> [options]")
     print("   📊 Stats: echogem stats")
     print("   🎨 Graph: echogem graph [options]")

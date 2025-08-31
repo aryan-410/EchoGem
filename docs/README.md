@@ -43,7 +43,20 @@ print(result.answer)
 
 **Perfect for:** New users, getting started, learning the basics
 
-### 2. [API Reference](API_REFERENCE.md) 🔧
+### 2. [CLI Guide](CLI_GUIDE.md) 💻
+**Complete command-line interface reference**
+
+- All CLI commands and options
+- Correct command format (`py -m echogem.cli`)
+- Complete workflow examples
+- Common use cases and scenarios
+- Troubleshooting CLI issues
+- Interactive mode usage
+- Graph visualization commands
+
+**Perfect for:** Command-line users, automation, quick reference
+
+### 3. [API Reference](API_REFERENCE.md) 🔧
 **Complete API documentation for developers**
 
 - All public classes and methods
@@ -55,7 +68,7 @@ print(result.answer)
 
 **Perfect for:** Developers, API integration, building applications
 
-### 3. [Architecture Overview](ARCHITECTURE.md) 🏗️
+### 4. [Architecture Overview](ARCHITECTURE.md) 🏗️
 **System design and technical architecture**
 
 - High-level system architecture
@@ -67,7 +80,7 @@ print(result.answer)
 
 **Perfect for:** System architects, contributors, understanding internals
 
-### 4. [Development Guide](DEVELOPMENT_GUIDE.md) 🛠️
+### 5. [Development Guide](DEVELOPMENT_GUIDE.md) 🛠️
 **Contributing to EchoGem development**
 
 - Setting up development environment
@@ -80,7 +93,7 @@ print(result.answer)
 
 **Perfect for:** Contributors, developers, maintainers
 
-### 5. [Troubleshooting Guide](TROUBLESHOOTING.md) 🚨
+### 6. [Troubleshooting Guide](TROUBLESHOOTING.md) 🚨
 **Solutions to common problems**
 
 - API key and connection issues

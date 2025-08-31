@@ -159,22 +159,22 @@ EchoGem provides a powerful command-line interface for easy use.
 
 ```bash
 # Show help
-echogem --help
+py -m echogem.cli --help
 
 # Process a transcript
-echogem process transcript.txt
+py -m echogem.cli process transcript.txt
 
 # Ask a question
-echogem ask "What is this about?"
+py -m echogem.cli ask "What is this about?"
 
 # Show system statistics
-echogem stats
+py -m echogem.cli stats
 
 # Clear all data
-echogem clear
+py -m echogem.cli clear
 
 # Visualize information graph
-echogem graph
+py -m echogem.cli graph
 ```
 
 ### Advanced CLI Usage
@@ -182,25 +182,25 @@ echogem graph
 #### Process with Options
 ```bash
 # Process with chunk details
-echogem process transcript.txt --show-chunks --show-metadata
+py -m echogem.cli process transcript.txt --show-chunks --show-metadata
 
 # Process with custom settings
-echogem process transcript.txt --max-tokens 3000 --similarity-threshold 0.85
+py -m echogem.cli process transcript.txt --max-tokens 3000 --similarity-threshold 0.85
 ```
 
 #### Query with Options
 ```bash
 # Ask with chunk details
-echogem ask "What are the key findings?" --show-chunks --show-metadata
+py -m echogem.cli ask "What are the key findings?" --show-chunks --show-metadata
 
 # Use more context
-echogem ask "Explain the methodology" --max-chunks 10
+py -m echogem.cli ask "Explain the methodology" --max-chunks 10
 ```
 
 #### Interactive Mode
 ```bash
 # Launch interactive CLI
-echogem interactive
+py -m echogem.cli interactive
 ```
 
 This opens an interactive menu where you can:
