@@ -239,16 +239,14 @@ During development, EchoGem was tested with various transcript content types:
 
 ## 📈 Development Timeline & Milestones
 
-### Phase 1: Foundation
-**Weeks 1-2**: Project setup and core architecture
+### Foundation
 
 - ✅ Repository structure and package configuration
 - ✅ Configuration management system
 - ✅ Initial CLI scaffolding and environment setup
 - ✅ Basic transcript processing pipeline
 
-### Phase 2: Core Development
-**Weeks 3-6**: Implementation of main algorithms
+### Core Development
 
 - ✅ Transcript chunking pipeline (`chunker.py`)
 - ✅ Vector database operations (`vector_store.py`)
@@ -256,8 +254,7 @@ During development, EchoGem was tested with various transcript content types:
 - ✅ Gemini API integration (`processor.py`)
 - ✅ Interactive CLI development (`cli.py`)
 
-### Phase 3: Optimization
-**Weeks 7-10**: Performance and production readiness
+### Optimization
 
 - ✅ Batch processing optimization
 - ✅ Comprehensive testing suite
@@ -265,8 +262,7 @@ During development, EchoGem was tested with various transcript content types:
 - ✅ Cross-platform compatibility testing
 - ✅ Graph visualization system (`graphe.py`)
 
-### Phase 4: Release
-**Weeks 11-13**: Package distribution and finalization
+### Release
 
 - ✅ PyPI package publication (`echogem`)
 - ✅ Performance benchmarking and validation
@@ -445,27 +441,23 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Academic Attribution
 **EchoGem: Intelligent Transcript Processing and Question Answering**
-Developed by Aryan as an independent open source project
-Repository: https://github.com/yourusername/echogem
+Developed by Aryan Saboo during Google Summer of Code 2025 at Google DeepMind
 
 ### Acknowledgments
-- **Google Gemini Team** for API access and technical support
-- **Pinecone** for vector database infrastructure
-- **Open Source Community** for foundational tools and libraries
-- **Python Community** for packaging and distribution tools
+- **Google Summer of Code** for the oppurtunity to work with accomplished professionals in this field
+- **Google Deepmind** for mentorship and guidance to all the cutting-edge AI technologies developed at the firm
+- **Open Source Community** for packaging and distribution tools
 
-## 👨‍💻 About Me
-
-**Independent Open Source Developer**
-
-- **LinkedIn**: [Your LinkedIn]
-- **GitHub**: [Your GitHub]
-- **Email**: your.email@example.com
+## 👨‍💻 Me
+Google Summer of Code Contributor at Google DeepMind (May 2025 - September 2025)
+- **LinkedIn**: http://linkedin.com/in/aryan-saboo
+- **GitHub**: https://github.com/aryan-410/
+- **Email**: aryansaboo2005@gmail.com
 
 ## 🌟 Success Story 🌟
 
-**From Research Challenge to Production Solution**
+**From a theoretical concept to its practical implementation**
 
-Making AI-powered transcript analysis efficient, accessible, and intelligent
+Making AI-powered long transcript analysis efficient, accessible, and intelligent
 
-**Project By**: Aryan | **Organization**: Independent Open Source Project
+**Project By**: Aryan Saboo | **Mentor**: Paige Bailey | **Organization**: Google DeepMind
