@@ -1,6 +1,6 @@
 # EchoGem: Intelligent Transcript Processing and Question Answering
 
-📋 **Intelligent Transcript Processing Library** | Powered by Google Gemini AI | Built with Python
+📋 **GSoC Progress Tracker** |Complete project timeline and accountability document used throughout GSoC 2025: https://docs.google.com/document/d/13AdIcjX10S5OW62pJXywYGBkoPsiFwPwwKtANn3nFLE/edit?usp=sharing&resourcekey=0-jPj-EPeUBZmVIxNgYXcH9Q
 
 **A powerful library for processing transcripts, chunking them intelligently, and answering questions using Google Gemini and vector search.**
 
