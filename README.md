@@ -1,16 +1,16 @@
 # EchoGem: Teaching Gemini to Think in Batches by Prioritizing What Matters
 
-📋 GSoC Progress Tracker: Complete project timeline and accountability document used throughout GSoC 2025: View Progress Tracker
+📋 GSoC Progress Tracker: Complete project timeline and accountability document used throughout GSoC 2025: View Progress Tracker(https://docs.google.com/document/d/13AdIcjX10S5OW62pJXywYGBkoPsiFwPwwKtANn3nFLE/edit?usp=sharing&resourcekey=0-jPj-EPeUBZmVIxNgYXcH9Q)
 
 PyPI · Google Summer of Code · Google DeepMind
 Python · MIT License
 A Google DeepMind GSoC 2025 Project | Powered by Google Gemini AI | Built with Python
 
-**Mentors:** Prof. Suguman Bansal, DeepMind Research Team
+**Mentors:** Paige Bailey
 **Program:** Google Summer of Code
 **Organization:** Google DeepMind
 **Student:** Aryan Saboo
-**Email:** [aryan.saboo@gatech.edu](mailto:aryan.saboo@gatech.edu)
+**Email:** [aryansaboo2005@gmail.com](aryansaboo2005@gmail.com)
 **Duration:** May 2025 – September 2025
 
 ---
