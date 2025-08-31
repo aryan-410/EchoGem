@@ -4,10 +4,9 @@
 
 **A powerful library for processing transcripts, chunking them intelligently, and answering questions using Google Gemini and vector search.**
 
-**Organization**: Independent Open Source Project  
-**Developer**: Aryan  
-**Email**: your.email@example.com  
-**Duration**: Ongoing Development  
+**Organization**: Google DeepMind
+**Developer**: Aryan Saboo  
+**Email**: aryansaboo2005@gmail.com 
 **License**: MIT License  
 
 ## 📖 Project Goals & Problem Statement
