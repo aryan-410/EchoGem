@@ -396,6 +396,295 @@ When you introduce a new module, also **log** what it does: the graph and the CS
 
 ---
 
+Here you go—drop this right under the existing “How the pipeline works” in your README.
+
+---
+
+# How it works (deep dive)
+
+This section walks through the concrete data flow, algorithms, IDs, logging, and what the graph is doing under the hood. If you only read one section, make it this one.
+
+## 1) Data model & IDs
+
+### Chunk objects
+
+Every chunk your `Chunker` emits is normalized into a **Node** that the runtime and the grapher share:
+
+* `node_id`: the stable identity for this chunk. If your chunker gives you a `chunk_id`, we keep it. Otherwise we fall back to a **content hash** `sha256(content)[:16]` (helper: `sha16()`).
+* `title`, `content`
+* `keywords`, `entities` (optional, used for UI/tooling, can inform scoring)
+* `last_used`, `usage_count` (updated whenever a chunk is picked)
+* `vec` (optional cache of its embedding; usually fetched from the vector DB on demand)
+
+These are persisted to `usage_cache_store.csv` so restarts don’t lose history.
+
+### Edge objects
+
+Edges aren’t stored; they’re **reconstructed** from co-usage logs. An **Edge** joins two nodes `(a, b)` with an aggregated co-pick **count**.
+
+> Strict mode: an edge is only drawn if we can **justify it by semantics** (cosine similarity ≥ threshold). No guesswork, no purely co-occurrence edges.
+
+---
+
+## 2) Cold boot → Warm system
+
+### Cold boot
+
+1. **Chunking the transcript**
+   `processor.chunker.ChunkTranscript(llm, transcript_path)` emits topic-coherent chunks (not fixed windows). It may tag `keywords`, `entities`, time ranges, etc.
+
+2. **Embedding & upsert**
+   `processor.vector_db.vectorize_chunks(chunks)` embeds chunk contents and **upserts** vectors (with the same IDs you’ll later use to retrieve).
+
+3. **Usage cache**
+   `processor.usage_cache.push_chunks(chunks)` serializes a canonical view to `usage_cache_store.csv`.
+
+At this point you can already query; the graph will be empty until you actually **pick** something (edges are built from picks).
+
+### Warm system
+
+On subsequent runs, we **load**:
+
+* `usage_cache_store.csv` (nodes + last\_used/usage\_count)
+* `pick_log.jsonl` + `pa_pick_log.jsonl` (co-pick events)
+* `positions_*.json` (node positions per tab)
+
+…and we rebuild edges with similarity gating.
+
+---
+
+## 3) Retrieval & scoring (RelevantInformationHandler)
+
+Given a prompt **Q**, we do **hybrid scoring**—semantic + lexical + information value—then apply a redundancy guard:
+
+### Signals (typical)
+
+* **Semantic similarity**: cosine between `embed(Q)` and each chunk vector.
+* **Lexical overlap**: bag-of-words/TF-IDF style overlap on important terms.
+* **Information value**: normalized **entropy** or density proxy (preference for fact-rich chunks).
+* **Recency**: exponential decay on `last_used` so fresh material has a soft bias.
+* **Coherence & locality bonuses**: reward adjacency or within-section links if your chunker marks them.
+
+### Example blended score
+
+```
+score_i = w_sem * cos(embed(Q), v_i)
+        + w_lex * tfidf_overlap(Q, chunk_i)
+        + w_info * entropy_norm(chunk_i)
+        + w_rec * recency_boost(chunk_i)
+        - w_red * redundancy_penalty(i | S)
+```
+
+Where **S** is the growing set of already-selected chunks; `redundancy_penalty` is an MMR-style term that downranks near-duplicates so you get **diversity**.
+
+> The exact weights (`w_*`) live in your handler; the design encourages tuning per domain (lecture vs. interview vs. debate).
+
+---
+
+## 4) Previous context reuse (PreviousContextHandler)
+
+We keep a small memory of good **Prompt→Answer** pairs (“PA pairs”) and bring them back when a new prompt is **semantically close** to a prior prompt.
+
+* **Similarity gate**: only neighbors above a threshold are considered relevant.
+* **Decay**: each pair’s utility decays over time (e.g., `exp(-Δt / τ)`) so old threads naturally fall off.
+* **Budget-aware**: reused snippets must fit the token/context budget (see §6).
+
+This makes the system feel **accumulative** within a session while keeping drift in check.
+
+---
+
+## 5) Vector store behavior (Pinecone adapter)
+
+`vector_store_ex.py` abstracts the backing index. Typical responsibilities:
+
+* `embed(text: str) -> list[float]`
+  The embedding function used for both chunks and queries. Keep this **stable** across a run (and preferably across runs).
+
+* `vectorize_chunks(chunks)`
+  Batches embeds → upserts to the index. **IDs here must match** the IDs you later use to retrieve, and the **namespace** must match both write & read.
+
+* `query(query_vec, top_k)`
+  Returns ID + score + metadata for nearest neighbors.
+
+* `get_vector(chunk_id)`
+  Fetches a **single** stored vector by its ID; the grapher uses this to compute cosine similarity between co-picked chunks.
+  If this returns `None`, the grapher logs:
+
+  > `[sim] Missing vectors for A or B; skipping edge (strict).`
+
+> If you change index name/namespace/dimension or the ID format between writing and reading, you’ll see “missing vectors” and **no bridges** will appear. Keep them aligned.
+
+---
+
+## 6) Prompt assembly & token budgeting
+
+The **Processor** owns budgeted prompt construction:
+
+1. **Candidate pool** from §3 (plus any §4 reused PA context).
+2. **Sort & pack** into a formatted prompt:
+
+   * lead with ultra-relevant chunks,
+   * keep **semantic diversity**,
+   * keep **chronological coherence** if timestamps exist,
+   * stop when adding the next chunk would blow the **max token budget**.
+3. **LLM call** (Gemini via `google-generativeai` / `langchain_google_genai`), then
+4. **Logging** (see §7).
+
+You can expose knobs like `max_context_tokens`, `k_init`, `k_backfill`, redundancy strength, etc., to tune latency vs. quality.
+
+---
+
+## 7) Logging & persistence
+
+Two complementary logs drive analytics and the graph:
+
+* **Chunk usage log**: `pick_log.jsonl`
+  Each line: `{"timestamp": "...", "picked_chunk_ids": ["id1","id2", ...]}`
+  The grapher aggregates all pairs `(id_i, id_j)` within the line and later **gates** bridges by cosine similarity.
+
+* **PA usage log**: `pa_pick_log.jsonl`
+  Same idea, but for prompt→answer **IDs**. Used by the PA tab.
+
+* **Usage cache CSV**: `usage_cache_store.csv`
+  Stores per-chunk metadata and usage stats; updated after picks. This is also what `usage_cache.list_chunk_ids()` reads.
+
+* **Positions**: `positions_chunks_truth_v3.json`, `positions_pa_truth_v3.json`
+  Saved by pressing **S** in the UI; makes layouts stable across runs.
+
+---
+
+## 8) Grapher mechanics (pygame)
+
+The UI has two tabs and runs a simple world/screen transform with pan/zoom:
+
+* **Tabs**:
+
+  * **Chunks**: only shows labels for **selected** nodes (the ones from the last pick), so focus stays tight.
+  * **PA pairs**: shows prompts as nodes; edges are co-usage links.
+* **Node color**: encodes **recency** (`last_used`) along a cold→hot gradient.
+* **Node size**: grows slowly with `usage_count` (or content length baseline).
+* **Edges**: width scales with **co-usage count** (log-scaled).
+* **Similarity gating**: for each co-used pair:
+
+  1. Fetch `get_vector(a)` and `get_vector(b)`; if either missing → **skip**.
+  2. Cosine similarity ≥ `--sim-threshold`? default `0.35` → **draw**; else **skip**.
+     Messages:
+
+     * `bridged A <-> B xN sim=0.58` (drawn)
+     * `skipped A <-> B (sim=0.21 < 0.350)` (rejected)
+* **Watchers**:
+  The UI monitors mtime on `usage_cache_store.csv`, `pick_log.jsonl`, and `pa_pick_log.jsonl`. Press **L** (or let the watcher notice changes) to **rebuild** edges and node stats without restarting.
+
+---
+
+## 9) Lifecycle of a single question
+
+1. **You press G** and type a prompt.
+2. **Processor**:
+
+   * embeds the prompt,
+   * queries top-k neighbors,
+   * blends scores with lexical/entropy/recency,
+   * applies redundancy suppression,
+   * optionally adds **reused PA** context,
+   * assembles a budgeted prompt for the LLM.
+3. **LLM answers**; Processor logs:
+
+   * `picked_chunk_ids` → `pick_log.jsonl`
+   * PA entry → `pa_pick_log.jsonl` (new or referenced)
+   * increments `usage_count` and stamps `last_used` for chunks/PA.
+4. **Grapher**:
+
+   * highlights selected chunks,
+   * recomputes co-usage **bridges** (only if semantic similarity justifies them),
+   * updates recency heat & sizes.
+
+> The result: you get an auditable, token-efficient context, and a visual trace of **what** the model actually read and **why** edges exist.
+
+---
+
+## 10) Why edges can be “missing”
+
+If you see lots of:
+
+```
+[sim] Missing vectors for A or B; skipping edge (strict).
+[events/chunks] skipped A <-> B (sim=? < 0.350)
+```
+
+it’s almost always one of:
+
+* **ID mismatch**: the IDs you upserted under aren’t the IDs you’re logging in `picked_chunk_ids`. Fix by ensuring your chunker sets `chunk_id` once, and that same ID is used everywhere.
+* **Namespace/index mismatch**: you wrote to one Pinecone namespace and read from another. Align both write and read configs.
+* **No stored vector**: `vectorize_chunks()` never ran, or failed silently. Run once after chunking, and confirm with a single-ID fetch:
+
+  ```bash
+  python -c "from processor_ex import Processor; p=Processor(); ids=getattr(p.usage_cache,'list_chunk_ids',lambda:[])(); print('N:',len(ids)); print('vec?', bool(ids and p.vector_db.get_vector(ids[0])))"
+  ```
+
+---
+
+## 11) Swapping components safely
+
+* **Keep IDs stable**
+  If you replace the chunker or vector DB, make sure the **same** `node_id` is used across:
+
+  1. upsert into the vector store,
+  2. retrieval results,
+  3. logging `picked_chunk_ids`.
+     That’s what lets the grapher fetch vectors and justify bridges.
+
+* **Keep dimensions consistent**
+  Change embedding models? Migrate the index (dimension must match). Mixing dims will cause query/upsert failures or bogus sims.
+
+* **Tune thresholds**
+  If your embedding model is “flatter” (lower cosines overall), consider lowering `--sim-threshold`. For punchier models, raise it.
+
+---
+
+## 12) Pseudocode cheat sheet
+
+### Candidate selection (MMR-style)
+
+```python
+S = []                  # selected chunks
+C = top_k_candidates    # by blended pre-score
+
+while C and budget_ok(S):
+    # Marginal gain balances relevance vs. redundancy
+    cand = argmax_c in C of (
+        rel(Q, c) - lambda_ * max_{s in S}(cos(vec(c), vec(s)))
+    )
+    S.append(cand)
+    C.remove(cand)
+```
+
+### Recency boost
+
+```python
+def recency_boost(chunk, half_life_hours=12):
+    if not chunk.last_used: return 0.0
+    age_h = (now - chunk.last_used).total_seconds() / 3600.0
+    return 0.5 ** (age_h / half_life_hours)
+```
+
+### Similarity-gated bridging
+
+```python
+for (a,b), count in co_usage_pairs_from_log:
+    va = get_vector(a) or embed(node[a].content)
+    vb = get_vector(b) or embed(node[b].content)
+    if not (va and vb): continue
+    sim = cosine(va, vb)
+    if sim >= sim_threshold:
+        add_edge(a, b, count)
+```
+
+
+That’s the whole machine: coherent chunking, hybrid relevance, redundancy control, budgeted prompts, conservative logging, and a graph that only draws **defensible** edges. If you keep IDs stable and namespaces aligned, the UI becomes a truthful map of the context your model actually used.
+
+---
+
 ## Roadmap
 
 * **Benchmark harness**: sweep over chunker/scorer hyper-parameters; unify logging for latency, token-cost, and QA quality checks.
