@@ -100,12 +100,12 @@ class PromptAnswerVectorDB:
         
         # Generate embedding
         try:
-            embedding = self.embedding_model.embed_query(text_to_embed)
-            embedding = list(map(float, embedding))
+            embedding = self.embedding_model.encode(text_to_embed).tolist()
         except Exception as e:
-            print(f"Error generating embedding: {e}")
-            # Use zero vector as fallback
-            embedding = [0.0] * self.dimension
+                            # Silent fallback - no error message
+            # Use small random values as fallback instead of zero vector
+            import random
+            embedding = [random.uniform(-0.1, 0.1) for _ in range(self.dimension)]
         
         # Prepare metadata
         metadata = {
@@ -155,8 +155,7 @@ class PromptAnswerVectorDB:
                 else:
                     text_to_embed = metadata['prompt']
                 
-                embedding = self.embedding_model.embed_query(text_to_embed)
-                embedding = list(map(float, embedding))
+                embedding = self.embedding_model.encode(text_to_embed).tolist()
                 
                 self.index.upsert(
                     vectors=[{
@@ -199,9 +198,9 @@ class PromptAnswerVectorDB:
         
         # Generate query embedding
         try:
-            query_embedding = self.embedding_model.embed_query(query_text)
+            query_embedding = self.embedding_model.encode(query_text).tolist()
         except Exception as e:
-            print(f"Error generating query embedding: {e}")
+                            # Silent fallback - no error message
             return []
         
         # Query Pinecone

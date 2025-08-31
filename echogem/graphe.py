@@ -108,6 +108,18 @@ class GraphVisualizer:
         self.dragging = False
         self.drag_offset = (0, 0)
         
+        # Camera/viewport
+        self.camera_x = 0.0
+        self.camera_y = 0.0
+        self.zoom = 1.0
+        self.panning = False
+        self.pan_start = (0, 0)
+        
+        # Force layout stability
+        self.layout_stable = False
+        self.layout_iterations = 0
+        self.max_layout_iterations = 200
+        
         # Display settings
         self.show_labels = True
         self.show_edges = True
@@ -214,23 +226,30 @@ class GraphVisualizer:
         """Create edges between related nodes"""
         print("Creating edges...")
         
-        # Create edges between chunks with similar keywords
+        # Create edges between chunks that have been used together historically
+        # AND meet semantic similarity threshold
         chunk_nodes = [n for n in self.nodes.values() if n.node_type == "chunk"]
         
         for i, node1 in enumerate(chunk_nodes):
             for j, node2 in enumerate(chunk_nodes[i+1:], i+1):
-                # Calculate similarity based on keywords and entities
-                similarity = self._calculate_similarity(node1, node2)
+                # Check if chunks have been used together historically
+                used_together = self._check_historical_usage_together(node1.node_id, node2.node_id)
                 
-                if similarity > 0.3:  # Threshold for creating edges
-                    edge = GraphEdge(
-                        source_id=node1.node_id,
-                        target_id=node2.node_id,
-                        weight=similarity,
-                        edge_type="similarity",
-                        color=self._get_edge_color(similarity)
-                    )
-                    self.edges.append(edge)
+                if used_together:
+                    # Calculate semantic similarity
+                    similarity = self._calculate_similarity(node1, node2)
+                    
+                    # Only create edge if semantic similarity meets threshold
+                    if similarity > 0.5:  # Higher threshold for semantic similarity
+                        edge = GraphEdge(
+                            source_id=node1.node_id,
+                            target_id=node2.node_id,
+                            weight=similarity,
+                            edge_type="historical_semantic",
+                            color=self._get_edge_color(similarity)
+                        )
+                        self.edges.append(edge)
+                        print(f"Bridge created: {node1.title[:20]} ↔ {node2.title[:20]} (sim: {similarity:.3f})")
         
         # Create edges between Q&A pairs and related chunks
         qa_nodes = [n for n in self.nodes.values() if n.node_type == "qa_pair"]
@@ -298,6 +317,47 @@ class GraphVisualizer:
         """Get edge color based on weight"""
         intensity = int(255 * weight)
         return (intensity, intensity, intensity)
+
+    def _check_historical_usage_together(self, chunk_id_a: str, chunk_id_b: str) -> bool:
+        """
+        Check if two chunks have been used together historically in the same Q&A context.
+        
+        Args:
+            chunk_id_a: ID of first chunk
+            chunk_id_b: ID of second chunk
+            
+        Returns:
+            True if chunks have been used together, False otherwise
+        """
+        try:
+            # Get chunk data from usage cache
+            chunk_a_data = self.usage_cache.get_chunk(chunk_id_a, {})
+            chunk_b_data = self.usage_cache.get_chunk(chunk_id_b, {})
+            
+            # Check if both chunks have been used
+            usage_a = chunk_a_data.get("usage_count", 0)
+            usage_b = chunk_b_data.get("usage_count", 0)
+            
+            if usage_a == 0 or usage_b == 0:
+                return False
+            
+            # Check temporal proximity (if used within 24 hours of each other)
+            last_usage_a = self.usage_cache.get_last_usage_time(chunk_id_a)
+            last_usage_b = self.usage_cache.get_last_usage_time(chunk_id_b)
+            
+            if last_usage_a and last_usage_b:
+                time_diff = abs((last_usage_a - last_usage_b).total_seconds() / 3600)  # hours
+                if time_diff <= 24:  # Used within 24 hours of each other
+                    return True
+            
+            # For now, we'll consider chunks as "used together" if they both have usage
+            # In a more sophisticated implementation, you could track actual Q&A sessions
+            # and see which chunks were retrieved together for the same question
+            return usage_a > 0 and usage_b > 0
+            
+        except Exception as e:
+            print(f"Error checking historical usage together: {e}")
+            return False
     
     def _initialize_layout(self) -> None:
         """Initialize node positions"""
@@ -346,17 +406,21 @@ class GraphVisualizer:
     
     def _force_directed_layout(self) -> None:
         """Apply force-directed layout"""
-        # Initialize random positions
-        for node in self.nodes.values():
-            node.x = random.uniform(50, self.screen_width - 50)
-            node.y = random.uniform(50, self.screen_height - 50)
-        
-        # Apply forces
-        for _ in range(100):  # Iterations
-            # Repulsion between all nodes
+        if not self.layout_stable and self.layout_iterations < self.max_layout_iterations:
+            # Initialize random positions only once
+            if self.layout_iterations == 0:
+                for node in self.nodes.values():
+                    node.x = random.uniform(-200, 200)
+                    node.y = random.uniform(-200, 200)
+            
+            # Apply forces with damping
+            total_movement = 0
+            damping = 0.95
+            
             for node1 in self.nodes.values():
                 fx, fy = 0, 0
                 
+                # Repulsion between all nodes
                 for node2 in self.nodes.values():
                     if node1.node_id == node2.node_id:
                         continue
@@ -371,7 +435,7 @@ class GraphVisualizer:
                         fx -= force * dx
                         fy -= force * dy
                 
-                # Attraction from edges
+                # Attraction from edges (bridges between chunks with semantic similarity)
                 for edge in self.edges:
                     if edge.source_id == node1.node_id:
                         target = self.nodes.get(edge.target_id)
@@ -380,7 +444,8 @@ class GraphVisualizer:
                             dy = target.y - node1.y
                             distance = math.sqrt(dx*dx + dy*dy)
                             if distance > 0:
-                                force = self.force_strength * edge.weight * 0.1
+                                # Stronger attraction for higher semantic similarity
+                                force = self.force_strength * edge.weight * 0.2
                                 fx += force * dx / distance
                                 fy += force * dy / distance
                     
@@ -391,17 +456,22 @@ class GraphVisualizer:
                             dy = source.y - node1.y
                             distance = math.sqrt(dx*dx + dy*dy)
                             if distance > 0:
-                                force = self.force_strength * edge.weight * 0.1
+                                force = self.force_strength * edge.weight * 0.2
                                 fx += force * dx / distance
                                 fy += force * dy / distance
                 
-                # Apply forces
-                node1.x += fx
-                node1.y += fy
+                # Apply forces with damping
+                node1.x += fx * damping
+                node1.y += fy * damping
                 
-                # Keep nodes within bounds
-                node1.x = max(50, min(self.screen_width - 50, node1.x))
-                node1.y = max(50, min(self.screen_height - 50, node1.y))
+                total_movement += abs(fx) + abs(fy)
+            
+            self.layout_iterations += 1
+            
+            # Check if layout has stabilized
+            if total_movement < 0.1:
+                self.layout_stable = True
+                print("Layout stabilized!")
     
     def _parse_list_field(self, value: Any) -> List[str]:
         """Parse list field from CSV data"""
@@ -431,11 +501,14 @@ class GraphVisualizer:
         
         print("Starting graph visualization...")
         print("Controls:")
-        print("  Mouse: Drag nodes, click to select")
+        print("  Left Click: Select and drag nodes")
+        print("  Right Click + Drag: Pan the graph")
+        print("  Scroll Wheel: Zoom in/out")
         print("  Space: Toggle layout modes")
         print("  L: Toggle labels")
         print("  E: Toggle edges")
         print("  U: Toggle usage stats")
+        print("  S: Save graph to JSON")
         print("  ESC: Exit")
         
         running = True
@@ -456,12 +529,22 @@ class GraphVisualizer:
                         self.show_edges = not self.show_edges
                     elif event.key == pygame.K_u:
                         self.show_usage_stats = not self.show_usage_stats
+                    elif event.key == pygame.K_s:
+                        self.export_graph(f"echogem_graph_{int(time.time())}.json")
+                        print("Graph saved!")
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self._handle_mouse_down(event)
                 elif event.type == pygame.MOUSEBUTTONUP:
                     self._handle_mouse_up(event)
                 elif event.type == pygame.MOUSEMOTION:
                     self._handle_mouse_motion(event)
+                elif event.type == pygame.MOUSEWHEEL:
+                    # Handle scroll zooming
+                    if event.y > 0:
+                        self.zoom *= 1.1
+                    else:
+                        self.zoom /= 1.1
+                    self.zoom = max(0.1, min(5.0, self.zoom))
             
             # Update
             self._update()
@@ -478,35 +561,51 @@ class GraphVisualizer:
         """Handle mouse button down events"""
         if event.button == 1:  # Left click
             mouse_pos = pygame.mouse.get_pos()
-            clicked_node = self._get_node_at_position(mouse_pos)
+            # Convert screen coordinates to world coordinates
+            world_pos = self._screen_to_world(mouse_pos)
+            clicked_node = self._get_node_at_position(world_pos)
             
             if clicked_node:
                 self.selected_node = clicked_node
                 self.dragging = True
-                self.drag_offset = (mouse_pos[0] - clicked_node.x, mouse_pos[1] - clicked_node.y)
+                self.drag_offset = (world_pos[0] - clicked_node.x, world_pos[1] - clicked_node.y)
             else:
                 self.selected_node = None
+        elif event.button == 3:  # Right click
+            self.panning = True
+            self.pan_start = pygame.mouse.get_pos()
     
     def _handle_mouse_up(self, event) -> None:
         """Handle mouse button up events"""
         if event.button == 1:  # Left click
             self.dragging = False
+        elif event.button == 3:  # Right click
+            self.panning = False
     
     def _handle_mouse_motion(self, event) -> None:
         """Handle mouse motion events"""
         if self.dragging and self.selected_node:
             mouse_pos = pygame.mouse.get_pos()
-            self.selected_node.x = mouse_pos[0] - self.drag_offset[0]
-            self.selected_node.y = mouse_pos[1] - self.drag_offset[1]
+            world_pos = self._screen_to_world(mouse_pos)
+            self.selected_node.x = world_pos[0] - self.drag_offset[0]
+            self.selected_node.y = world_pos[1] - self.drag_offset[1]
             
             # Keep within bounds
-            self.selected_node.x = max(50, min(self.screen_width - 50, self.selected_node.x))
-            self.selected_node.y = max(50, min(self.screen_height - 50, self.selected_node.y))
+            self.selected_node.x = max(-1000, min(1000, self.selected_node.x))
+            self.selected_node.y = max(-1000, min(1000, self.selected_node.y))
+        elif self.panning:
+            current_pos = pygame.mouse.get_pos()
+            dx = current_pos[0] - self.pan_start[0]
+            dy = current_pos[1] - self.pan_start[1]
+            self.camera_x -= dx / self.zoom
+            self.camera_y -= dy / self.zoom
+            self.pan_start = current_pos
         
         # Update hover state
         mouse_pos = pygame.mouse.get_pos()
+        world_pos = self._screen_to_world(mouse_pos)
         for node in self.nodes.values():
-            node.hover = self._is_point_in_node(mouse_pos, node)
+            node.hover = self._is_point_in_node(world_pos, node)
     
     def _get_node_at_position(self, pos: Tuple[int, int]) -> Optional[GraphNode]:
         """Get node at given position"""
@@ -515,7 +614,19 @@ class GraphVisualizer:
                 return node
         return None
     
-    def _is_point_in_node(self, pos: Tuple[int, int], node: GraphNode) -> bool:
+    def _screen_to_world(self, screen_pos: Tuple[int, int]) -> Tuple[float, float]:
+        """Convert screen coordinates to world coordinates"""
+        x = (screen_pos[0] - self.screen_width / 2) / self.zoom + self.camera_x
+        y = (screen_pos[1] - self.screen_height / 2) / self.zoom + self.camera_y
+        return (x, y)
+    
+    def _world_to_screen(self, world_pos: Tuple[float, float]) -> Tuple[int, int]:
+        """Convert world coordinates to screen coordinates"""
+        x = int((world_pos[0] - self.camera_x) * self.zoom + self.screen_width / 2)
+        y = int((world_pos[1] - self.camera_y) * self.zoom + self.screen_height / 2)
+        return (x, y)
+    
+    def _is_point_in_node(self, pos: Tuple[float, float], node: GraphNode) -> bool:
         """Check if point is inside node"""
         dx = pos[0] - node.x
         dy = pos[1] - node.y
@@ -531,8 +642,8 @@ class GraphVisualizer:
     
     def _update(self) -> None:
         """Update graph state"""
-        # Apply force-directed layout if enabled
-        if self.layout_mode == "force":
+        # Apply force-directed layout if enabled and not stable
+        if self.layout_mode == "force" and not self.layout_stable:
             self._force_directed_layout()
     
     def _draw(self) -> None:
@@ -563,21 +674,30 @@ class GraphVisualizer:
             target = self.nodes.get(edge.target_id)
             
             if source and target:
+                # Convert world coordinates to screen coordinates
+                source_screen = self._world_to_screen((source.x, source.y))
+                target_screen = self._world_to_screen((target.x, target.y))
+                
                 # Calculate edge color based on weight
                 intensity = int(255 * edge.weight)
                 color = (intensity, intensity, intensity)
                 
-                # Draw edge
+                # Draw edge with thickness based on semantic similarity
+                thickness = max(1, int(edge.weight * 5 * self.zoom))
                 pygame.draw.line(
                     self.screen, color,
-                    (int(source.x), int(source.y)),
-                    (int(target.x), int(target.y)),
-                    max(1, int(edge.weight * 3))
+                    source_screen,
+                    target_screen,
+                    thickness
                 )
     
     def _draw_nodes(self) -> None:
         """Draw all nodes"""
         for node in self.nodes.values():
+            # Convert world coordinates to screen coordinates
+            screen_pos = self._world_to_screen((node.x, node.y))
+            screen_radius = int(node.radius * self.zoom)
+            
             # Determine node color
             if node.selected:
                 color = self.colors['selected']
@@ -589,22 +709,22 @@ class GraphVisualizer:
             # Draw node
             pygame.draw.circle(
                 self.screen, color,
-                (int(node.x), int(node.y)),
-                int(node.radius)
+                screen_pos,
+                screen_radius
             )
             
             # Draw border
             pygame.draw.circle(
                 self.screen, (255, 255, 255),
-                (int(node.x), int(node.y)),
-                int(node.radius), 2
+                screen_pos,
+                screen_radius, 2
             )
             
             # Draw labels
             if self.show_labels:
-                self._draw_node_label(node)
+                self._draw_node_label(node, screen_pos, screen_radius)
     
-    def _draw_node_label(self, node: GraphNode) -> None:
+    def _draw_node_label(self, node: GraphNode, screen_pos: Tuple[int, int], screen_radius: int) -> None:
         """Draw label for a node"""
         if not self.font:
             return
@@ -617,8 +737,8 @@ class GraphVisualizer:
         text_rect = text_surface.get_rect()
         
         # Position below node
-        text_rect.centerx = int(node.x)
-        text_rect.top = int(node.y + node.radius + 5)
+        text_rect.centerx = screen_pos[0]
+        text_rect.top = screen_pos[1] + screen_radius + 5
         
         # Draw text
         self.screen.blit(text_surface, text_rect)
@@ -628,7 +748,7 @@ class GraphVisualizer:
             usage_text = f"({node.usage_count})"
             usage_surface = self.small_font.render(usage_text, True, (200, 200, 200))
             usage_rect = usage_surface.get_rect()
-            usage_rect.centerx = int(node.x)
+            usage_rect.centerx = screen_pos[0]
             usage_rect.top = text_rect.bottom + 2
             self.screen.blit(usage_surface, usage_rect)
     
@@ -642,6 +762,7 @@ class GraphVisualizer:
             f"Nodes: {len(self.nodes)}",
             f"Edges: {len(self.edges)}",
             f"Layout: {self.layout_mode}",
+            f"Zoom: {self.zoom:.2f}x",
             f"Labels: {'On' if self.show_labels else 'Off'}",
             f"Edges: {'On' if self.show_edges else 'Off'}",
             f"Usage: {'On' if self.show_usage_stats else 'Off'}"
@@ -656,6 +777,16 @@ class GraphVisualizer:
         # Draw selected node info
         if self.selected_node:
             self._draw_selected_node_info()
+        
+        # Draw hover info
+        hover_node = None
+        for node in self.nodes.values():
+            if node.hover:
+                hover_node = node
+                break
+        
+        if hover_node and not self.selected_node:
+            self._draw_hover_info(hover_node)
     
     def _draw_selected_node_info(self) -> None:
         """Draw detailed information for selected node"""
@@ -741,6 +872,75 @@ class GraphVisualizer:
             print(f"Graph exported to {filename}")
         except Exception as e:
             print(f"Error exporting graph: {e}")
+    
+    def _draw_hover_info(self, node: GraphNode) -> None:
+        """Draw detailed hover information for a node"""
+        if not self.font or not node:
+            return
+        
+        # Create detailed hover panel
+        info_lines = [
+            f"Type: {node.node_type.upper()}",
+            f"Title: {node.title}",
+            f"Usage Count: {node.usage_count}",
+        ]
+        
+        if node.timestamp_range:
+            info_lines.append(f"Time: {node.timestamp_range}")
+        
+        if node.last_used:
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            time_diff = now - node.last_used
+            if time_diff.days > 0:
+                last_used_str = f"{time_diff.days} days ago"
+            elif time_diff.seconds > 3600:
+                last_used_str = f"{time_diff.seconds // 3600} hours ago"
+            else:
+                last_used_str = f"{time_diff.seconds // 60} minutes ago"
+            info_lines.append(f"Last Used: {last_used_str}")
+        
+        if node.keywords:
+            keywords_str = ', '.join(node.keywords[:5])
+            if len(node.keywords) > 5:
+                keywords_str += "..."
+            info_lines.append(f"Keywords: {keywords_str}")
+        
+        if node.entities:
+            entities_str = ', '.join(node.entities[:3])
+            if len(node.entities) > 3:
+                entities_str += "..."
+            info_lines.append(f"Entities: {entities_str}")
+        
+        # Add content preview
+        content_preview = node.content[:100] + "..." if len(node.content) > 100 else node.content
+        info_lines.append(f"Content: {content_preview}")
+        
+        # Calculate panel dimensions
+        max_line_width = 0
+        for line in info_lines:
+            text_surface = self.font.render(line, True, self.colors['text'])
+            max_line_width = max(max_line_width, text_surface.get_width())
+        
+        panel_width = min(max_line_width + 20, self.screen_width - 20)
+        panel_height = len(info_lines) * 22 + 20
+        
+        # Position panel (avoid going off screen)
+        panel_x = min(self.screen_width - panel_width - 10, 
+                     max(10, pygame.mouse.get_pos()[0] - panel_width // 2))
+        panel_y = max(10, pygame.mouse.get_pos()[1] - panel_height - 10)
+        
+        # Draw panel background with transparency
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        pygame.draw.rect(self.screen, (40, 40, 60, 230), panel_rect)
+        pygame.draw.rect(self.screen, (150, 150, 200), panel_rect, 2)
+        
+        # Draw text
+        y_offset = panel_y + 12
+        for line in info_lines:
+            text_surface = self.font.render(line, True, self.colors['text'])
+            self.screen.blit(text_surface, (panel_x + 10, y_offset))
+            y_offset += 22
 
 
 def main():

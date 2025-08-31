@@ -43,7 +43,7 @@ class Chunker:
             else:
                 raise ValueError("Google API key required. Set GOOGLE_API_KEY environment variable.")
         
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Initialize sentence transformer
         try:

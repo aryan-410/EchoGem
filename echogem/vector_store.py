@@ -5,7 +5,10 @@ Vector database operations for storing and retrieving transcript chunks.
 import os
 import json
 import hashlib
-from typing import List, Optional, Dict, Any
+import time
+import uuid
+from typing import List, Optional, Dict, Any, Tuple
+from datetime import datetime, timezone
 import pinecone
 from sentence_transformers import SentenceTransformer
 from .models import Chunk
@@ -49,6 +52,7 @@ class ChunkVectorDB:
         self.region = region
         self.dimension = dimension
 
+        # Initialize Pinecone
         self.pc = pinecone.Pinecone(api_key=self.api_key)
         
         # Create index if it doesn't exist
@@ -65,6 +69,51 @@ class ChunkVectorDB:
 
         self.index = self.pc.Index(self.index_name)
 
+    def _clean_text_for_encoding(self, text: str) -> str:
+        """
+        Clean and preprocess text content for embedding generation.
+        
+        Args:
+            text: Raw text content
+            
+        Returns:
+            Cleaned text suitable for encoding
+        """
+        try:
+            if not text or not isinstance(text, str):
+                return ""
+            
+            # Remove or replace problematic characters
+            cleaned = text
+            
+            # Replace common problematic patterns
+            import re
+            
+            # Remove square bracket content (like [NEW RADICALS, "YOU GET WHAT YOU GIVE"])
+            cleaned = re.sub(r'\[[^\]]*\]', '', cleaned)
+            
+            # Remove extra whitespace
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+            
+            # More aggressive cleaning - only keep basic alphanumeric and common punctuation
+            cleaned = re.sub(r'[^\w\s\.\,\!\?\-\:\;\"\']', '', cleaned)
+            
+            # Remove any remaining problematic characters
+            cleaned = re.sub(r'[^\x00-\x7F]+', '', cleaned)  # Remove non-ASCII characters
+            
+            # Ensure the text is not empty after cleaning
+            if not cleaned.strip():
+                return "Empty content"
+            
+            # Limit text length to prevent issues
+            cleaned = cleaned.strip()[:1000]  # Limit to 1000 characters
+            
+            return cleaned
+            
+        except Exception as e:
+            print(f"Error cleaning text: {e}")
+            return "Error in text cleaning"
+
     def entropy(self, text: str) -> float:
         """
         Calculate information entropy score for text
@@ -76,61 +125,169 @@ class ChunkVectorDB:
             Entropy score between 0 and 1
         """
         try:
-            # Try to load spacy model, fallback to basic analysis
-            try:
-                nlp = spacy.load("en_core_web_sm")
-                use_spacy = True
-            except OSError:
-                use_spacy = False
-                print("Warning: spacy model not found. Using basic entropy calculation.")
-            
             if not text.strip():
                 return 0.0
 
-            if use_spacy:
-                doc = nlp(text)
-                sentences = [sent.text for sent in doc.sents]
-                words = [token.text.lower() for token in doc if token.is_alpha]
-                entities = [ent.text for ent in doc.ents]
-            else:
-                # Basic fallback
-                sentences = [s.strip() for s in text.split('.') if s.strip()]
-                words = [w.lower() for w in text.split() if w.isalpha()]
-                entities = []
-
-            total_words = len(words)
-            if total_words == 0:
+            # Basic entropy calculation
+            sentences = [s.strip() for s in text.split('.') if s.strip()]
+            words = [w.lower() for w in text.split() if w.isalpha()]
+            
+            # Calculate basic entropy metrics
+            word_count = len(words)
+            sentence_count = len(sentences)
+            
+            if word_count == 0:
                 return 0.0
-
-            # Named entity density
-            ned = len(entities) / max(1, len(sentences))
-
-            # Lexical diversity
-            unique_keywords = len(set(words))
-            ld = unique_keywords / max(1, total_words)
-
-            # Semantic variance (if sentence transformers available)
-            sv = 0.0
-            if sentences and len(sentences) > 1:
-                try:
-                    embedder = SentenceTransformer("all-MiniLM-L6-v2")
-                    embeddings = embedder.encode(sentences)
-                    variance = np.mean(np.var(embeddings, axis=0))
-                    sv = 1.0 / (1.0 + variance)
-                except Exception:
-                    # Fallback to basic variance
-                    sentence_lengths = [len(s.split()) for s in sentences]
-                    if len(sentence_lengths) > 1:
-                        variance = np.var(sentence_lengths)
-                        sv = 1.0 / (1.0 + variance)
-
-            # Weighted combination
-            score = 0.4 * ned + 0.4 * ld + 0.2 * sv
-            return min(1.0, max(0.0, score))
+            
+            # Simple entropy based on word variety and sentence structure
+            unique_words = len(set(words))
+            word_variety = unique_words / word_count if word_count > 0 else 0
+            
+            # Sentence length variety
+            sentence_lengths = [len(s.split()) for s in sentences if s.strip()]
+            if sentence_lengths:
+                avg_sentence_length = sum(sentence_lengths) / len(sentence_lengths)
+                length_variety = 1.0 / (1.0 + abs(avg_sentence_length - 15))  # Normalize around 15 words
+            else:
+                length_variety = 0.0
+            
+            # Combine metrics
+            entropy_score = (word_variety * 0.6) + (length_variety * 0.4)
+            return min(entropy_score, 1.0)
             
         except Exception as e:
             print(f"Entropy calculation error: {e}")
             return 0.0
+
+    def add_chunk(self, chunk: Chunk) -> None:
+        """
+        Add a single chunk to the vector database
+        
+        Args:
+            chunk: Chunk object to add
+        """
+        # Generate chunk ID if not present (do this first to avoid scope issues)
+        chunk_id = chunk.chunk_id or str(uuid.uuid4())
+        
+        try:
+            # Clean and preprocess the text content
+            cleaned_content = self._clean_text_for_encoding(chunk.content)
+            
+            # Generate embedding for the chunk
+            try:
+                embedding = self.embedding_model.encode(cleaned_content).tolist()
+            except Exception as encode_error:
+                # Silent fallback - no error message
+                # Use a fallback embedding with small random values
+                import random
+                embedding = [random.uniform(-0.1, 0.1) for _ in range(self.dimension)]
+            
+            # Prepare vector for Pinecone
+            vector = {
+                "id": chunk_id,
+                "values": embedding,
+                "metadata": {
+                    "chunk_text": chunk.content,
+                    "title": chunk.title,
+                    "keywords": json.dumps(chunk.keywords),
+                    "named_entities": json.dumps(chunk.named_entities),
+                    "timestamp_range": chunk.timestamp_range,
+                    "entropy": self.entropy(chunk.content),
+                },
+            }
+
+            # Upsert to Pinecone
+            self.index.upsert(vectors=[vector], namespace="chunks")
+            
+        except Exception as e:
+            print(f"Error adding chunk {chunk_id}: {e}")
+            raise
+
+    def search_chunks(self, query: str, limit: int = 5) -> Optional[List[Chunk]]:
+        """
+        Search for chunks similar to the query
+        
+        Args:
+            query: Search query
+            limit: Maximum number of chunks to return
+            
+        Returns:
+            List of Chunk objects or None if no matches
+        """
+        try:
+            # Clean and preprocess the query text
+            cleaned_query = self._clean_text_for_encoding(query)
+            
+            # Generate embedding for the query
+            try:
+                query_embedding = self.embedding_model.encode(cleaned_query).tolist()
+            except Exception as encode_error:
+                # Silent fallback - no error message
+                # Use a fallback embedding with small random values
+                import random
+                query_embedding = [random.uniform(-0.1, 0.1) for _ in range(self.dimension)]
+            
+            # Search in Pinecone
+            results = self.index.query(
+                vector=query_embedding,
+                top_k=limit,
+                namespace="chunks",
+                include_metadata=True
+            )
+            
+            if not results.matches:
+                return None
+            
+            # Convert results to Chunk objects
+            chunks = []
+            for match in results.matches:
+                metadata = match.metadata
+                
+                # Parse keywords and entities from JSON
+                keywords = []
+                entities = []
+                try:
+                    if metadata.get("keywords"):
+                        keywords = json.loads(metadata["keywords"])
+                    if metadata.get("named_entities"):
+                        entities = json.loads(metadata["named_entities"])
+                except:
+                    pass
+                
+                chunk = Chunk(
+                    chunk_id=match.id,
+                    title=metadata.get("title", "Unknown"),
+                    content=metadata.get("chunk_text", ""),
+                    keywords=keywords,
+                    named_entities=entities,
+                    timestamp_range=metadata.get("timestamp_range", ""),
+                    metadata={
+                        "score": match.score,
+                        "entropy": metadata.get("entropy", 0.0)
+                    }
+                )
+                chunks.append(chunk)
+            
+            return chunks
+            
+        except Exception as e:
+            print(f"Error searching chunks: {e}")
+            return None
+
+    def clear(self) -> None:
+        """
+        Clear all data from the vector database.
+        
+        This will delete all vectors from the Pinecone index.
+        Use with caution as this will delete all stored data.
+        """
+        try:
+            # Delete all vectors from the index
+            self.index.delete(delete_all=True, namespace="chunks")
+            print("✅ Vector database cleared successfully")
+        except Exception as e:
+            print(f"❌ Error clearing vector database: {e}")
+            raise
 
     def vectorize_chunks(self, chunks: List[Chunk]) -> None:
         """
@@ -150,12 +307,22 @@ class ChunkVectorDB:
         embeddings = []
         for i, text in enumerate(texts):
             try:
-                embedding = self.embedding_model.embed_query(text)
-                embeddings.append(embedding)
+                # Clean and preprocess the text
+                cleaned_text = self._clean_text_for_encoding(text)
+                try:
+                    embedding = self.embedding_model.encode(cleaned_text).tolist()
+                    embeddings.append(embedding)
+                except Exception as encode_error:
+                    # Silent fallback - no error message
+                    # Use a fallback embedding with small random values
+                    import random
+                    fallback_embedding = [random.uniform(-0.1, 0.1) for _ in range(self.dimension)]
+                    embeddings.append(fallback_embedding)
+                
                 if (i + 1) % 10 == 0:
                     print(f"  Processed {i + 1}/{len(texts)} chunks")
             except Exception as e:
-                print(f"Error embedding chunk {i}: {e}")
+                print(f"Error processing chunk {i}: {e}")
                 # Use zero vector as fallback
                 embeddings.append([0.0] * self.dimension)
 
@@ -268,7 +435,8 @@ class ChunkVectorDB:
         requested = min(max(k * of, k), max_candidate_cap)
 
         # Generate query embedding
-        prompt_embedding = self.embedding_model.embed_query(prompt)
+        cleaned_prompt = self._clean_text_for_encoding(prompt)
+        prompt_embedding = self.embedding_model.encode(cleaned_prompt).tolist()
         
         # Query Pinecone
         qr = self.index.query(

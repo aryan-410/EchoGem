@@ -123,6 +123,28 @@ class UsageCache:
         """
         return self.rows.get(chunk_id)
 
+    def get_last_usage_time(self, chunk_id: str) -> Optional[datetime]:
+        """
+        Get the last usage time for a specific chunk
+        
+        Args:
+            chunk_id: ID of the chunk
+            
+        Returns:
+            Datetime object of last usage, or None if never used
+        """
+        try:
+            last_used_str = self.rows.get(chunk_id, {}).get("last_used", "")
+            if not last_used_str:
+                return None
+            
+            # Parse ISO format datetime
+            return datetime.fromisoformat(last_used_str.replace('Z', '+00:00'))
+            
+        except Exception as e:
+            print(f"Error parsing last usage time for chunk {chunk_id}: {e}")
+            return None
+
     def delete_chunk(self, chunk_id: str) -> None:
         """
         Delete a chunk from the cache
