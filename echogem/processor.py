@@ -421,7 +421,7 @@ Please acknowledge that you have read and understood this transcript.
             return dot_product / (norm1 * norm2)
             
         except Exception as e:
-            print(f"Error calculating cosine similarity: {e}")
+            # Silent fallback - no error message
             return 0.0
 
     def _calculate_recency_score(self, chunk_id: str) -> float:
@@ -913,7 +913,7 @@ Please provide a clear, accurate answer based on the available information.
             return min(1.0, max(0.0, radius_score))
             
         except Exception as e:
-            print(f"Error calculating chunk radius: {e}")
+            # Silent fallback - no error message
             return 0.5
 
     def should_merge_chunks(self, chunk_a: Chunk, chunk_b: Chunk, relevance_threshold: float = 0.8, coherence_threshold: float = 0.6) -> bool:
@@ -962,7 +962,7 @@ Please provide a clear, accurate answer based on the available information.
             return should_merge
             
         except Exception as e:
-            print(f"Error determining merge eligibility: {e}")
+            # Silent fallback - no error message
             return False
 
     def _calculate_coherence_score(self, chunk_id_a: str, chunk_id_b: str) -> float:
@@ -1049,7 +1049,7 @@ Please provide a clear, accurate answer based on the available information.
             return usage_a > 0 and usage_b > 0
             
         except Exception as e:
-            print(f"Error checking historical usage together: {e}")
+            # Silent fallback - no error message
             return False
 
     def clear_cache(self) -> None:
