@@ -1,0 +1,22 @@
+# Core dependencies
+langchain-google-genai>=0.1.0
+pinecone>=7.0.0
+sentence-transformers>=2.2.0
+pydantic>=2.0.0
+
+# NLP and ML
+spacy>=3.5.0
+numpy>=1.21.0
+
+# Visualization (optional)
+pygame>=2.0.0
+
+# Optional: Download spacy model
+# python -m spacy download en_core_web_sm
+
+# Development dependencies (install with: pip install -e .[dev])
+# pytest>=6.0
+# black>=21.0
+# isort>=5.0
+# flake8>=3.8
+# mypy>=0.800
