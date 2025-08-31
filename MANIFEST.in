@@ -1,0 +1,31 @@
+# Include only the echogem package and its contents
+include echogem/*.py
+include echogem/*.md
+include echogem/*.txt
+include echogem/*.yml
+include echogem/*.yaml
+
+# Include subdirectories within echogem
+recursive-include echogem/examples *
+recursive-include echogem/demos *
+recursive-include echogem/legacy *
+recursive-include echogem/.github *
+
+# Include the LICENSE file
+include LICENSE
+
+# Exclude unnecessary files
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude .git*
+global-exclude .venv*
+global-exclude .env*
+global-exclude *.log
+global-exclude *.tmp
+global-exclude build/
+global-exclude dist/
+global-exclude *.egg-info/
